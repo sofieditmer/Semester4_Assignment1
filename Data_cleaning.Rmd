@@ -1,0 +1,434 @@
+---
+title: "Data_cleaning of Eye-tracking Data"
+author: "Sofie Ditmer"
+date: "2/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+
+```
+
+```{r load EyeLink data}
+## Load sample data for both experiments
+Foraging_Samples <- read_csv("Data_2020/Exported_EyeLink_data/Foraging_Samples.csv")
+SocialEngagement_Samples <- read_csv("Data_2020/Exported_EyeLink_data/SocialEngagement_Samples.csv")
+
+## Load fixations data for both experiments
+Foraging_Fixations <- read_csv("Data_2020/Exported_EyeLink_data/Foraging_Fixations.csv")
+SocialEngagement_Fixations <- read_csv("Data_2020/Exported_EyeLink_data/SocialEngagement_Fixations.csv")
+
+## Load saccades data for both experiments
+Foraging_Saccades <- read_csv("Data_2020/Exported_EyeLink_data/Foraging_Saccades.csv")
+SocialEngagement_Saccades <- read_csv("Data_2020/Exported_EyeLink_data/SocialEngagement_Saccades.csv")
+```
+
+```{r add gender and task info}
+## We have made a small function to make things easier for you. What does the function do? If we use F/M some commands will take F as false. 
+
+Add_Info <- function(df){ #defining a function that takes a dataframe as input
+  
+  df$Task[grepl("_",df$RECORDING_SESSION_LABEL)]='Foraging' #if the label contains _ it is named "foraging"
+  df$Task[!grepl("_",df$RECORDING_SESSION_LABEL)]='SocialEngagement' # if the label does not contain _ it is named "socialEngagement"
+  
+  df$ParticipantGender[grepl("F",df$RECORDING_SESSION_LABEL)]='Female'
+  df$ParticipantGender[grepl("M",df$RECORDING_SESSION_LABEL)]='Male'
+  
+  df$SearchOrder[grepl("_1",df$RECORDING_SESSION_LABEL)]=1
+  df$SearchOrder[grepl("_2",df$RECORDING_SESSION_LABEL)]=2
+  
+  return(df)
+}
+
+## Run the function on the datasets
+Foraging_Samples <- Add_Info(Foraging_Samples)
+Foraging_Fixations <- Add_Info(Foraging_Fixations)
+Foraging_Saccades <- Add_Info(Foraging_Saccades)
+SocialEngagement_Samples <- Add_Info(SocialEngagement_Samples)
+SocialEngagement_Fixations <- Add_Info(SocialEngagement_Fixations)
+SocialEngagement_Saccades <- Add_Info(SocialEngagement_Saccades)
+```
+
+```{r bind the dataframes}
+## Use rbind() to make collapse across experiments
+Samples <- rbind(Foraging_Samples, SocialEngagement_Samples)
+Fixations <- rbind(Foraging_Fixations, SocialEngagement_Fixations)
+Saccades <- rbind(Foraging_Saccades, SocialEngagement_Saccades)
+
+```
+
+
+```{r keep only needed variables}
+# We only want certain varibales. We use select() function to keep the variables we want
+
+Samples = Samples %>% 
+  select(
+    ParticipantID=RECORDING_SESSION_LABEL,
+    Trial=TRIAL_INDEX,
+    Time=TIMESTAMP,
+    LeftGazeX=LEFT_GAZE_X,
+    LeftGazeY=LEFT_GAZE_Y,
+    RightGazeX=RIGHT_GAZE_X,
+    RightGazeY=RIGHT_GAZE_Y,
+    LeftPupilSize=LEFT_PUPIL_SIZE,
+    RightPupilSize=RIGHT_PUPIL_SIZE,
+    Task,
+    ParticipantGender,
+    SearchOrder
+    ) 
+
+Fixations = Fixations %>% 
+  select(
+    ParticipantID=RECORDING_SESSION_LABEL,
+    Trial=TRIAL_INDEX,
+    FixationNo=CURRENT_FIX_INDEX,
+    StartTime=CURRENT_FIX_START,
+    EndTime=CURRENT_FIX_END,
+    Duration=CURRENT_FIX_DURATION,
+    PositionX=CURRENT_FIX_X,
+    PositionY=CURRENT_FIX_Y,
+    PupilSize=CURRENT_FIX_PUPIL,
+    EyeUsed=EYE_USED,
+    Task,
+    ParticipantGender,
+    SearchOrder
+    ) 
+
+Saccades = Saccades %>%
+  select(
+    ParticipantID=RECORDING_SESSION_LABEL,
+    Trial=TRIAL_INDEX,
+    SaccadeNo=CURRENT_SAC_INDEX,
+    StartTime=CURRENT_SAC_START_TIME,
+    EndTime=CURRENT_SAC_END_TIME,
+    Duration=CURRENT_SAC_DURATION,
+    StartX=CURRENT_SAC_START_X,
+    StartY=CURRENT_SAC_START_Y,
+    EndX=CURRENT_SAC_END_TIME,
+    EndY=CURRENT_SAC_END_Y,
+    PeakVelocity=CURRENT_SAC_PEAK_VELOCITY,
+    MeanVelocity=CURRENT_SAC_AVG_VELOCITY,
+    Blink=CURRENT_SAC_CONTAINS_BLINK,
+    Direction=CURRENT_SAC_DIRECTION,
+    Amplitude=CURRENT_SAC_AMPLITUDE,
+    EyeUsed=EYE_USED,
+    Task,
+    ParticipantGender,
+    SearchOrder)
+```
+
+
+```{r}
+# Samples$RightGazeX = gsub(".", NA, Samples$RightGazeX)
+# Samples$RightGazeY = gsub(".", NA, Samples$RightGazeY)
+# Samples$RightPupilSize = gsub(".", NA, Samples$RightPupilSize)
+# Samples$LeftPupilSize = gsub(".", NA, Samples$LeftPupilSize)
+# 
+# Samples <- Samples %>% 
+#   mutate(GazeX = ifelse(is.na(RightGazeX ), LeftGazeX, RightGazeX),
+#         (GazeY = ifelse(is.na(RightGazeY ), LeftGazeY, RightGazeY))
+# Samples <- Samples %>% 
+#   mutate(PupilSize = ifelse(is.na(LeftPupilSize), RightPupilSize, LeftPupilSize))
+```
+
+```{r fix problem with extra zeros}
+## The problem is that Excel (which we have used to export the data to CSV) adds two extra zeros
+## to each number, then transforms it into a character *facepalm*.
+## So each variable below has to be transformed to a numeric, then divided by 100 to remove
+## the extra zeros
+
+Samples <- Samples %>% 
+  group_by(ParticipantID, Trial) %>% 
+  mutate(Time = (Time-Time[1])/100,
+         LeftGazeX = as.numeric(LeftGazeX)/100,
+         LeftGazeY = as.numeric(LeftGazeY)/100,
+         RightGazeX = as.numeric(RightGazeX)/100,
+         RightGazeY = as.numeric(RightGazeY)/100,
+         LeftPupilSize = as.numeric(LeftPupilSize)/100,
+         RightPupilSize = as.numeric(RightPupilSize)/100)
+
+Fixations <- Fixations %>% 
+  mutate(PositionX = as.numeric(PositionX)/100,
+         PositionY = as.numeric(PositionY)/100,
+         PupilSize = as.numeric(PupilSize)/100)
+
+Saccades <- Saccades %>% 
+  mutate(StartX = as.numeric(StartX)/100,
+         StartY = as.numeric(StartY)/100,
+         EndX = as.numeric(EndX)/100,
+         EndX = as.numeric(EndX)/100,
+         PeakVelocity = as.numeric(PeakVelocity)/100,
+         ## this is just because the MeanVelocity columns has commas instead of points
+         MeanVelocity = as.numeric(gsub(";", ".", MeanVelocity)))
+
+```
+
+## Merge with PsychoPy logfiles
+```{r}
+## For the Foraging task using the left_join() function
+logfiles_Foraging <- read_csv("Data_2020/logfiles_Foraging/ForagingOrder.csv")
+Samples <- left_join(Samples, logfiles_Foraging, by = c("Trial", "SearchOrder"))
+
+
+## For the Social Engagement task using the left_join() function
+logfiles_SocialEngagement <- read_csv("Data_2020/logfiles_SocialEngagement/logfiles_SocialEngagement.csv")
+Samples <- left_join(Samples, logfiles_SocialEngagement, by = c("Trial", "ParticipantID"))
+
+```
+
+
+```{r save files}
+write_csv(Samples, "Data_2020/Exported_EyeLink_data/Cleaned/Samples.csv")
+write_csv(Fixations, "Data_2020/Exported_EyeLink_data/Cleaned/Fixations.csv")
+write_csv(Saccades, "Data_2020/Exported_EyeLink_data/Cleaned/Saccades.csv")
+
+```
+
+
+## Import fixation number and saccade number from processed data to samples
+
+```{r}
+## WARNING: THIS MAY TAKE A WHILE!
+#we want to get some information from fixation - we can merge by time later. For each fixation in the dataset create starttime from the start time in fixations (also for endtime ect) - it creates a fixation number column and puts in the fixation number in samples when it's between the start and end of the coulmn of the fixation dataset  
+
+for (t in seq(nrow(Fixations))){
+  StartTime=Fixations$StartTime[t]
+  EndTime=Fixations$EndTime[t]
+  ID=Fixations$ParticipantID[t]
+  Trial=Fixations$Trial[t]
+  FixN=Fixations$FixationNo[t]
+  Samples$FixationNo[Samples$Time >= StartTime  & Samples$Time <= EndTime & Samples$ParticipantID==ID & Samples$Trial==Trial]=FixN
+}
+
+for (t in seq(nrow(Saccades))){
+  StartTime=Saccades$StartTime[t]
+  EndTime=Saccades$EndTime[t]
+  ID=Saccades$ParticipantID[t]
+  Trial=Saccades$Trial[t]
+  SacN=Saccades$SaccadeNo[t]
+  Samples$SaccadeNo[Samples$Time >= StartTime  & Samples$Time <= EndTime & Samples$ParticipantID==ID & Samples$Trial==Trial]=SacN
+}
+
+write_csv(Samples, "Data_2020/Exported_EyeLink_data/Cleaned/Samples_merged.csv")
+```
+
+```{r}
+#load clean data
+samples_clean <- read_csv("Data_2020/Exported_EyeLink_data/Samples_merged.csv")
+Fixations <- read_csv("Data_2020/Exported_EyeLink_data/Cleaned/Fixations.csv")
+Saccades <- read_csv("Data_2020/Exported_EyeLink_data/Cleaned/Saccades.csv")
+```
+
+# SANITY CHECKS
+
+```{r}
+## Check distribution of fixations - number for fixation, duration
+
+# Checking the number of fixations
+FixD <- Fixations %>% 
+  group_by(Trial, ParticipantID, Task) %>% 
+  dplyr::summarize(count=n()) 
+
+# Checking the distribution of fixations
+ggplot(FixD, aes(count, color=ParticipantID)) + 
+  stat_density(alpha=0.3) + facet_wrap(.~Task) + 
+  geom_rug(aes(x=count, y=0))
+
+# We can see that there are two humps in the plots for each task (social engagement and foraging). These two humps could be different tasks - we need to be sure to have them in different. We should use the poisson distribution. We use the Poisson distribution, because we are predicting a discrete number and not a continuous number
+
+ggplot(Fixations, aes(Duration, color=ParticipantID)) + 
+  stat_density(alpha=0.3) + 
+  facet_wrap(.~Task) + 
+  geom_rug(aes(x=Duration, y=0))
+
+range(Fixations$Duration)
+mean(Fixations$Duration)
+3*sd(Fixations$Duration)
+# we have lognormal ditribution
+
+# ggplot(Fixations, aes(FixationNo)) + stat_density()
+# mean(Fixations$FixationNo) 
+# 3*sd(Fixations$FixationNo)
+
+## Check distribution of saccades - amplitude, velocity, acceleration (velosity/time)
+SacD <- Saccades %>% 
+  group_by(Trial, ParticipantID, Task) %>% 
+  dplyr::summarize(count=n())
+
+# Plotting
+ggplot(SacD, aes(count, color=ParticipantID)) + 
+  stat_density(alpha=0.3) + facet_wrap(.~Task) + 
+  geom_rug(aes(x=count, y=0)) # a rug gives you a line per datapoint
+
+#we should use the poisson distribution
+
+ggplot(Saccades, aes(Amplitude)) + 
+  stat_density() #you don't need this
+
+ggplot(Saccades, aes(Duration, color=ParticipantID)) + 
+  stat_density(alpha=0.3) + 
+  facet_wrap(.~Task) + 
+  geom_rug(aes(x=Duration, y=0))
+
+## Remove all the data points that fall outside of the screen coordinates
+## (1680, 1050), since these are artefacts
+samples_clean$LeftGazeX <- ifelse(samples_clean$LeftGazeX>1680, NA, samples_clean$LeftGazeX)
+samples_clean$LeftGazeX <- ifelse(samples_clean$LeftGazeX<0, NA, samples_clean$LeftGazeX)
+samples_clean$LeftGazeY <- ifelse(samples_clean$LeftGazeY>1050, NA, samples_clean$LeftGazeY)
+samples_clean$LeftGazeY <- ifelse(samples_clean$LeftGazeY<0, NA, samples_clean$LeftGazeY)
+samples_clean$RightGazeX <- ifelse(samples_clean$RightGazeX>1680, NA, samples_clean$RightGazeX)
+samples_clean$RightGazeX <- ifelse(samples_clean$RightGazeX<0, NA, samples_clean$RightGazeX)
+samples_clean$RightGazeY <- ifelse(samples_clean$RightGazeY>1050, NA, samples_clean$RightGazeY)
+samples_clean$RightGazeY <- ifelse(samples_clean$RightGazeY<0, NA, samples_clean$RightGazeY)
+
+Fixations$PositionX <- ifelse(Fixations$PositionX>1680, NA, Fixations$PositionX)
+Fixations$PositionX <- ifelse(Fixations$PositionX<0, NA, Fixations$PositionX)
+Fixations$PositionY <- ifelse(Fixations$PositionY>1050, NA, Fixations$PositionY)
+Fixations$PositionY <- ifelse(Fixations$PositionY<0, NA, Fixations$PositionY)
+Saccades$StartX <- ifelse(Saccades$StartX>1680, NA, Saccades$StartX)
+Saccades$StartX <- ifelse(Saccades$StartX<0, NA, Saccades$StartX)
+Saccades$StartY <- ifelse(Saccades$StartY>1050, NA, Saccades$StartY)
+Saccades$StartY <- ifelse(Saccades$StartY<0, NA, Saccades$StartY)
+
+## Check distribution of pupil sizes for the Social Engagement task
+# make one column for pupil size
+samples_clean <- samples_clean %>% 
+  mutate(PupilSize = ifelse(is.na(RightPupilSize), LeftPupilSize, RightPupilSize))
+
+```
+
+```{r}
+## Check for outliers in fixation durations using a boxplot
+
+
+## Check for outliers in saccade velocity using a boxplot
+
+```
+
+
+# MAKE SOME PRELIMINARY VISUALIZATIONS TO EYEBALL THE DATA
+
+```{r}
+## Make a plot using geom_point and geom_line to visualize fixation duration
+## in the two experiments
+
+
+```
+
+
+```{r}
+## Make a plot using geom_point and geom_line to visualize saccade amplitude
+## in the two experiments
+
+
+```
+
+
+```{r}
+## Make a density plot visualizing pupil size by gender and by experiment
+
+
+```
+
+
+# SOME MORE ADVANCED VISUALIZATIONS
+
+
+## Heatmaps
+
+```{r}
+## Make a heatmap for fixation density across the two experiments
+
+
+```
+
+
+```{r}
+## Make a heatmap for fixation density for the "sheep.jpg" stimulus, divided by the
+## two visual foraging tasks (Count vs. Search)
+
+
+```
+
+
+```{r}
+## Make the same heatmap, this time plotting fixation duration, and compare with the previous
+
+```
+
+
+## Scanpaths
+
+```{r}
+#you would need gaze-position for fixations and the duration of fixations adn the order in which they appeared in
+
+## Using a for-loop, make a scanpath for each participant in the Foraging experiment. Use facets to plot the 10 trials separately for each participant. Use these plots as diagnostic tools in order to answer the following questions:
+## 1) Do the data look reasonable and of good quality? Do we have any issues?
+## 2) Can we differentiate between the two conditions (Count and Search) only by looking at the scanpaths?
+## 3) Can we spot the trials in which the participants found the star?
+
+samples_clean$RightGazeX <- as.numeric(samples_clean$RightGazeX)
+
+# taking a subset of the clean data where participant ID is F7_2 and the trial number is 2
+x = subset(samples_clean, ParticipantID == 'F7_2' & Trial == 2)
+
+# plotting the subset
+ggplot(x, aes(LeftGazeX, 1051-LeftGazeY)) + 
+  geom_point() + 
+  xlim(0, 1680) + 
+  ylim(0, 1050)
+
+fixation_summary <- x[!is.na(x$FixationNo),] %>%
+  group_by(FixationNo) %>%
+  summarize(MeanX = mean(LeftGazeX),
+            MeanY = mean(LeftGazeY),
+            Duration = max(Time) - min(Time)) %>%
+          dplyr::filter(Duration >= 400)
+
+ggplot(fixation_summary, aes(MeanX, 1051-MeanY, color = fixation_summary$FixationNo)) +
+  geom_point(size = fixation_summary$Duration/100, alpha = 0.5) + 
+  xlim(0, 1680) + 
+  ylim(0, 1050) + 
+  geom_path(color="black") + 
+  ggrepel::geom_text_repel(aes(label = fixation_summary$Duration, size = 2))
+
+#the lighter the fixation the later it was
+
+img <- jpeg::readJPEG('sheep.jep')
+img <- grid::raster
+```
+
+
+```{r}
+## Do the same analysis for the Social Engagement task (eyeballing differences due to the two
+## experimental conditions, i.e., Ostensiveness and Directionality)
+
+
+```
+
+
+## AOIs
+
+```{r}
+## Using the 'sheep.jpg' picture, draw an AOI around the black sheep in the foreground.
+## Then make a count of how many fixations happen inside that AOI
+
+
+```
+
+
+```{r}
+## Do the same thing for fixation duration
+
+
+```
+
+```{r}
+## Find the star in the 'penguins.jpg' picture. Draw an AOI around it, then compute 
+## Time to First Fixation to that AOI
+
+
+```

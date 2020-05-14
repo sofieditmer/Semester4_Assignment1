@@ -1,0 +1,78 @@
+---
+title: "Data analysis of Eye-tracking Data"
+author: "Sofie Ditmer"
+date: "2/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+library(tidyverse)
+ggplot2::theme_set(theme_bw())
+library(lme4)
+```
+
+```{r load data}
+Samples <- read_csv("Data_2020/Exported_EyeLink_data/Samples_merged.csv") %>% 
+  mutate(GazeY = 1051-GazeY, Fix_MeanY = 1051-Fix_MeanY) %>% 
+  filter(Time<=41202)
+
+```
+
+```{r}
+# For each thing in group by, take the fist datapoint of x object
+amplitude_data <- Samples[!is.na(Samples$Sac_Amplitude),] %>% 
+  filter(Task == "Foraging") %>% 
+  group_by(ParticipantID, Trial, SaccadeNo) %>%
+  summarize(MeanX = GazeX[1], MeanY = GazeY[1], Amplitude = Sac_Amplitude[1], ForagingType = ForagingType[1], Stimulus=Stimulus[1])
+
+# Making a model
+log_model <- glmer(Amplitude ~ 1 + ForagingType + (1+ForagingType|ParticipantID) + (1+ForagingType|Stimulus), data = amplitude_data, family = gaussian(link=log))
+
+summary(log_model) #We can see that search has longer amplitude than count
+
+norm_model <- glmer(Amplitude ~ 1 + ForagingType + (1+ForagingType|ParticipantID) + (1+ForagingType|Stimulus), data = amplitude_data, family = gaussian(link=identity))
+
+summary(norm_model) #no significant effect
+
+MuMIn::r.squaredGLMM(log_model) 
+
+#The log model doesn't explain a lot of variance - it fails to see that there are a lot of different ways the saccades are in each data. If want the real values of log model we have to take exp() of the values as they are on a log scale (for search take intercept + slope).
+# 4.349 is the difference between the search condition and 0 (intercept + slope - it's the average saccade lenght in degrees)
+# 2.53 is the amplitude saccade lenght in the count task in degrees
+# 1.814 is the difference between them. Degrees are measured in the eyes vision.
+
+plot(log_model) #looking at residuals - can never be good at our data isn't independent
+
+plot(norm_model)
+
+sim_norm_model <- DHARMa::simulateResiduals(log_model)
+
+plot(sim_norm_model)
+
+sim_log_model <- DHARMa::simulateResiduals(log_model)
+
+plot(sim_norm_model)
+#this fixes the independent thing - residuals are much less spred than we expected, which makes predicitons skeewed for both distributions
+
+pm1 <- predict(mGaus)
+pm2 <-predict(mLog)
+summary(abs(pm2-amplitude_data$Amplitude))
+summary(abs(pm1-amplitude_data$Amplitude))
+
+## Before doing this we must make a summary dataset
+Fix <- Samples[!is.na(Samples$FixationNo),] %>% # remember to remove NAs 
+  filter(Task == "Foraging") %>% 
+  group_by(ParticipantID, Trial) %>%
+  summarize(MeanX = GazeX[1], MeanY = GazeY[1], ForagingType = ForagingType[1], Stimulus=Stimulus[1], Fix_Number = max(FixationNo))
+
+log_model_fix <- glmer(Fix_Number ~ 1 + ForagingType + (1+ForagingType|ParticipantID) + (1+ForagingType|Stimulus), data = Fix, family = gaussian(link=log))
+
+summary(log_model_fix) # search has more fixations
+
+norm_model_fix <- glmer(Fix_Number ~ 1 + ForagingType + (1+ForagingType|ParticipantID) + (1+ForagingType|Stimulus), data = Fix, family = gaussian(link=identity))
+
+summary(norm_model_fix) # not significant
+```
+
